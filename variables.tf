@@ -188,3 +188,42 @@ variable "create_self_signed_cert" {
   type        = bool
   default     = false
 }
+
+# ========================================
+# Azure Load Balancer Variables
+# ========================================
+
+variable "lb_subnet_name" {
+  description = "Name of the Load Balancer subnet"
+  type        = string
+  default     = "subnet-loadbalancer"
+}
+
+variable "lb_subnet_prefix" {
+  description = "Address prefix for Load Balancer subnet"
+  type        = string
+  default     = "10.0.3.0/24"
+}
+
+variable "lb_pip_name" {
+  description = "Name of the Load Balancer public IP"
+  type        = string
+  default     = "pip-lb-web"
+}
+
+variable "lb_name" {
+  description = "Name of the Azure Load Balancer"
+  type        = string
+  default     = "lb-web-basic"
+}
+
+variable "lb_sku" {
+  description = "SKU for Load Balancer (Basic or Standard)"
+  type        = string
+  default     = "Standard"
+  
+  validation {
+    condition     = contains(["Basic", "Standard"], var.lb_sku)
+    error_message = "Load Balancer SKU must be either Basic or Standard"
+  }
+}
