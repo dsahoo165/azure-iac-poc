@@ -1555,4 +1555,4 @@ az network application-gateway show-backend-health --resource-group rg-appgw-lab
 az network application-gateway show --resource-group rg-appgw-lab --name appgw-lab-basic --query "{HealthProbe:probes[?name=='health-probe-custom'].{Name:name,Protocol:protocol,Host:host,Path:path,Interval:interval,Timeout:timeout,UnhealthyThreshold:unhealthyThreshold}, BackendSettings:backendHttpSettingsCollection[?name=='appGatewayBackendHttpSettings'].{Name:name,CookieAffinity:cookieBasedAffinity,AffinityCookieName:affinityCookieName,Probe:probe.id}}" --output json
 
 az group delete --name rg-appgw-lab --yes --no-wait
-<img width="635" height="27196" alt="image" src="https://github.com/user-attachments/assets/d793e54e-d06f-4ab3-a587-d2b9815f69be" />
+
