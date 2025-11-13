@@ -201,7 +201,27 @@ resource "azurerm_application_gateway" "appgw" {
     backend_http_settings_name = local.http_setting_name
   }
 
-  # Request Routing Rule - HTTPS (Path-based with rewrite rules)
+  # Request Routing Rule - Multi-site app1 (Higher priority to match hostname first)
+  request_routing_rule {
+    name                       = "rule-app1"
+    priority                   = 150
+    rule_type                  = "Basic"
+    http_listener_name         = local.listener_app1_name
+    backend_address_pool_name  = local.pool_app1_name
+    backend_http_settings_name = local.http_setting_name
+  }
+
+  # Request Routing Rule - Multi-site app2 (Higher priority to match hostname first)
+  request_routing_rule {
+    name                       = "rule-app2"
+    priority                   = 160
+    rule_type                  = "Basic"
+    http_listener_name         = local.listener_app2_name
+    backend_address_pool_name  = local.pool_app2_name
+    backend_http_settings_name = local.http_setting_name
+  }
+
+  # Request Routing Rule - HTTPS (Path-based with rewrite rules - lower priority as catch-all)
   request_routing_rule {
     name                       = local.request_routing_rule_name_https
     priority                   = 200
@@ -209,26 +229,6 @@ resource "azurerm_application_gateway" "appgw" {
     http_listener_name         = local.listener_name_https
     url_path_map_name          = local.url_path_map_name
     rewrite_rule_set_name      = local.rewrite_rule_set_name
-  }
-
-  # Request Routing Rule - Multi-site app1
-  request_routing_rule {
-    name                       = "rule-app1"
-    priority                   = 300
-    rule_type                  = "Basic"
-    http_listener_name         = local.listener_app1_name
-    backend_address_pool_name  = local.pool_app1_name
-    backend_http_settings_name = local.http_setting_name
-  }
-
-  # Request Routing Rule - Multi-site app2
-  request_routing_rule {
-    name                       = "rule-app2"
-    priority                   = 400
-    rule_type                  = "Basic"
-    http_listener_name         = local.listener_app2_name
-    backend_address_pool_name  = local.pool_app2_name
-    backend_http_settings_name = local.http_setting_name
   }
 
   # URL Path Map for path-based routing
