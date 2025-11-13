@@ -191,7 +191,7 @@ resource "azurerm_application_gateway" "appgw" {
     password = var.ssl_certificate_password
   }
 
-  # Request Routing Rule - HTTP (Basic)
+  # Request Routing Rule - HTTP (Basic with rewrite rules)
   request_routing_rule {
     name                       = local.request_routing_rule_name_http
     priority                   = 100
@@ -199,6 +199,7 @@ resource "azurerm_application_gateway" "appgw" {
     http_listener_name         = local.listener_name_http
     backend_address_pool_name  = local.backend_address_pool_name
     backend_http_settings_name = local.http_setting_name
+    rewrite_rule_set_name      = local.rewrite_rule_set_name
   }
 
   # Request Routing Rule - Multi-site app1 (Higher priority to match hostname first)
@@ -209,6 +210,7 @@ resource "azurerm_application_gateway" "appgw" {
     http_listener_name         = local.listener_app1_name
     backend_address_pool_name  = local.pool_app1_name
     backend_http_settings_name = local.http_setting_name
+    rewrite_rule_set_name      = local.rewrite_rule_set_name
   }
 
   # Request Routing Rule - Multi-site app2 (Higher priority to match hostname first)
@@ -219,6 +221,7 @@ resource "azurerm_application_gateway" "appgw" {
     http_listener_name         = local.listener_app2_name
     backend_address_pool_name  = local.pool_app2_name
     backend_http_settings_name = local.http_setting_name
+    rewrite_rule_set_name      = local.rewrite_rule_set_name
   }
 
   # Request Routing Rule - HTTPS (Path-based with rewrite rules - lower priority as catch-all)
