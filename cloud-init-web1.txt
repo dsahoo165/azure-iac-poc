@@ -1,0 +1,19 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - nginx
+
+write_files:
+  - path: /var/www/html/index.html
+    content: |
+      <h1>Backend Server 1</h1>
+      <p>Hostname: ${hostname}</p>
+      <p>Private IP: ${private_ip}</p>
+    owner: www-data:www-data
+    permissions: '0644'
+
+runcmd:
+  - systemctl restart nginx
+  - systemctl enable nginx
