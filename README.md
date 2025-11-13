@@ -145,75 +145,169 @@ test_https_command = "curl -k https://74.225.226.223"
 
 ## 🧪 Testing the Deployment
 
-### 1. Test Basic Load Balancing (HTTP)
+### Prerequisites for Testing
 
-```bash
-# Make multiple requests to see load balancing
+First, get your Application Gateway public IP:
+```powershell
+terraform output
+```
+
+Note the `appgw_public_ip` value - you'll use this for all tests below.
+
+---
+
+### **Step 1: Test Basic Load Balancing (HTTP)**
+
+Test that traffic distributes between VM1 and VM2:
+
+```powershell
+# Make 10 requests to see load balancing in action
 for ($i=1; $i -le 10; $i++) { 
-    curl http://<APPGW_PUBLIC_IP> -UseBasicParsing | Select-String "Backend Server"
+    Write-Host "Request $i :"
+    curl http://4.240.54.83 -UseBasicParsing | Select-String "Backend Server"
 }
 ```
 
-**Expected:** Traffic alternates between "Backend Server 1" and "Backend Server 2"
+**Expected Result:** Traffic alternates between "Backend Server 1" and "Backend Server 2"
 
-### 2. Test SSL Termination (HTTPS)
+**✅ Success Criteria:** 
+- You see responses from both Backend Server 1 and Backend Server 2
+- Distribution is roughly equal (5 requests each)
 
-```bash
-# Windows PowerShell
+---
+
+### **Step 2: Test SSL Termination (HTTPS)**
+
+Verify HTTPS connections work with SSL offloading:
+
+```powershell
+# Windows PowerShell - Ignore self-signed certificate warnings
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
-curl https://<APPGW_PUBLIC_IP> -UseBasicParsing
-
-# Linux/WSL
-curl -k https://<APPGW_PUBLIC_IP>
+Invoke-WebRequest -Uri https://4.240.54.83 -UseBasicParsing | Select-Object -ExpandProperty Content
 ```
 
-### 3. Test Path-Based Routing
-
+Alternative for Linux/WSL:
 ```bash
-# Requests to /api/* should route to VM1 (10.0.2.4)
-curl -k https://<APPGW_PUBLIC_IP>/api/test
-
-# Requests to /videos/* should route to VM2 (10.0.2.5)
-curl -k https://<APPGW_PUBLIC_IP>/videos/test.mp4
-
-# Other paths should route to VM2 (default pool)
-curl -k https://<APPGW_PUBLIC_IP>/
+curl -k https://4.240.54.83
 ```
 
-### 4. Test Multi-Site Hosting
+**Expected Result:** Successful HTTPS connection with HTML response from backend VMs
 
-```bash
-# Route to VM1 using app1 hostname
-curl -k -H "Host: app1.appgwlab.local" https://<APPGW_PUBLIC_IP>
+**✅ Success Criteria:**
+- Connection succeeds over HTTPS (port 443)
+- Response contains backend server information
+- No connection errors
 
-# Route to VM2 using app2 hostname
-curl -k -H "Host: app2.appgwlab.local" https://<APPGW_PUBLIC_IP>
+---
+
+### **Step 3: Test Path-Based Routing**
+
+Test that different URL paths route to different backend pools:
+
+```powershell
+# Test /api/* path → should route to VM1 (pool-app1)
+Write-Host "`n--- Testing /api/* path ---"
+curl -k https://4.240.54.83/api/test -UseBasicParsing | Select-String "Backend Server"
+
+# Test /videos/* path → should route to VM2 (pool-app2)
+Write-Host "`n--- Testing /videos/* path ---"
+curl -k https://4.240.54.83/videos/test.mp4 -UseBasicParsing | Select-String "Backend Server"
+
+# Test default path → should route to VM2 (default pool)
+Write-Host "`n--- Testing default path ---"
+curl -k https://4.240.54.83/ -UseBasicParsing | Select-String "Backend Server"
 ```
 
-### 5. Test Security Headers
+**Expected Results:**
+- `/api/*` → Backend Server 1 (VM1 - 10.0.2.4)
+- `/videos/*` → Backend Server 2 (VM2 - 10.0.2.5)
+- `/` (default) → Backend Server 2 (default pool)
 
-```bash
+**✅ Success Criteria:**
+- Each path routes to the correct backend
+- Path-based routing rules are working
+- URL path map configuration is effective
+
+---
+
+### **Step 4: Test Multi-Site Hosting**
+
+Test hostname-based routing with different virtual hosts:
+
+```powershell
+# Test app1.appgwlab.local → routes to VM1 (pool-app1)
+Write-Host "`n--- Testing app1.appgwlab.local ---"
+curl -k -H "Host: app1.appgwlab.local" https://4.240.54.83 -UseBasicParsing | Select-String "Backend Server"
+
+# Test app2.appgwlab.local → routes to VM2 (pool-app2)
+Write-Host "`n--- Testing app2.appgwlab.local ---"
+curl -k -H "Host: app2.appgwlab.local" https://4.240.54.83 -UseBasicParsing | Select-String "Backend Server"
+```
+
+**Expected Results:**
+- `app1.appgwlab.local` → Backend Server 1 (VM1)
+- `app2.appgwlab.local` → Backend Server 2 (VM2)
+
+**✅ Success Criteria:**
+- Host header routing works correctly
+- Each hostname routes to its designated backend pool
+- Multi-site listeners are configured properly
+
+---
+
+### **Step 5: Test Security Headers (Rewrite Rules)**
+
+Verify that security headers are added by Application Gateway:
+
+```powershell
 # Check response headers
-curl -kI https://<APPGW_PUBLIC_IP>
+curl -kI https://4.240.54.83
 ```
 
-**Expected headers:**
+**Expected Headers:**
 - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
 - `X-Frame-Options: SAMEORIGIN`
 - `X-Content-Type-Options: nosniff`
 
-### 6. Test Session Affinity
+**✅ Success Criteria:**
+- All three security headers are present in the response
+- Header values match the configured rewrite rules
+- Headers are added to all HTTPS responses
 
-```bash
-# Save cookies
-curl -k -c cookies.txt https://<APPGW_PUBLIC_IP>/
+---
 
-# Make requests with cookie (should stick to same backend)
-curl -k -b cookies.txt https://<APPGW_PUBLIC_IP>/
-curl -k -b cookies.txt https://<APPGW_PUBLIC_IP>/
+### **Step 6: Test Session Affinity (Cookie-Based)**
+
+Test that session persistence keeps requests on the same backend:
+
+```powershell
+# First request - creates a session and saves the cookie
+$response1 = Invoke-WebRequest -Uri https://4.240.54.83 -UseBasicParsing -SessionVariable session
+Write-Host "First request:"
+$response1.Content | Select-String "Backend Server"
+
+# Subsequent requests with the same session - should stick to the same backend
+$response2 = Invoke-WebRequest -Uri https://4.240.54.83 -UseBasicParsing -WebSession $session
+Write-Host "Second request (with session):"
+$response2.Content | Select-String "Backend Server"
+
+$response3 = Invoke-WebRequest -Uri https://4.240.54.83 -UseBasicParsing -WebSession $session
+Write-Host "Third request (with session):"
+$response3.Content | Select-String "Backend Server"
 ```
 
-### 7. Check Backend Health
+**Expected Result:** All requests with the session go to the **same** backend server
+
+**✅ Success Criteria:**
+- Cookie `AppGatewayAffinity` is set in the first response
+- All subsequent requests with the cookie route to the same backend
+- Session persistence is maintained across multiple requests
+
+---
+
+### **Step 7: Check Backend Health Status**
+
+Verify that both backend VMs are healthy:
 
 ```powershell
 az network application-gateway show-backend-health `
@@ -222,21 +316,137 @@ az network application-gateway show-backend-health `
   --output table
 ```
 
-**Expected:** Both VMs showing "Healthy"
+**Expected Result:** Both VMs showing **"Healthy"** status
 
-### 8. Query Log Analytics
+**✅ Success Criteria:**
+- Both backend servers report "Healthy" status
+- Health probe is successfully reaching both VMs
+- HTTP status codes are in the 200-399 range
 
-Wait 5-15 minutes after deployment, then query logs:
+---
+
+### **Step 8: View Application Gateway Status**
+
+Check the operational state of the Application Gateway:
+
+```powershell
+az network application-gateway show `
+  --resource-group rg-appgw-lab `
+  --name appgw-lab-basic `
+  --query "{Name:name, OperationalState:operationalState, ProvisioningState:provisioningState}" `
+  --output table
+```
+
+**Expected Result:** 
+- OperationalState: **Running**
+- ProvisioningState: **Succeeded**
+
+---
+
+### **Step 9: Query Log Analytics (Wait 5-15 minutes after deployment)**
+
+View access logs and traffic patterns:
 
 ```powershell
 # Get workspace ID
 $workspaceId = terraform output -raw log_analytics_workspace_id
 
-# Query recent requests
+# Query recent access logs
 az monitor log-analytics query `
   --workspace $workspaceId `
-  --analytics-query "AzureDiagnostics | where ResourceType == 'APPLICATIONGATEWAYS' and Category == 'ApplicationGatewayAccessLog' | where TimeGenerated > ago(1h) | take 20" `
+  --analytics-query "AzureDiagnostics | where ResourceType == 'APPLICATIONGATEWAYS' and Category == 'ApplicationGatewayAccessLog' | where TimeGenerated > ago(1h) | project TimeGenerated, clientIP_s, requestUri_s, httpStatus_d, serverRouted_s | take 20" `
   --output table
+
+# Check load balancing distribution
+az monitor log-analytics query `
+  --workspace $workspaceId `
+  --analytics-query "AzureDiagnostics | where ResourceType == 'APPLICATIONGATEWAYS' | summarize Requests=count() by serverRouted_s" `
+  --output table
+```
+
+**Expected Result:** 
+- Access logs show recent requests
+- Traffic is distributed across both backend servers
+
+**✅ Success Criteria:**
+- Logs are being collected in Log Analytics
+- You can see request details (client IP, URI, status code, backend server)
+- Load balancing distribution is visible
+
+---
+
+### **Step 10: Performance Testing (Optional)**
+
+Test with multiple concurrent requests:
+
+```powershell
+# Simple load test - 50 requests with 10 parallel threads
+1..50 | ForEach-Object -Parallel {
+    try {
+        $response = Invoke-WebRequest -Uri "https://4.240.54.83" -UseBasicParsing -TimeoutSec 5
+        Write-Host "Request $_ : $($response.StatusCode)"
+    } catch {
+        Write-Host "Request $_ : Failed - $($_.Exception.Message)"
+    }
+} -ThrottleLimit 10
+```
+
+**Expected Result:** All requests complete successfully with 200 status codes
+
+**✅ Success Criteria:**
+- Application Gateway handles concurrent requests
+- No timeouts or failures
+- Response times are acceptable
+
+---
+
+### **Quick Test All Features Script**
+
+Save this as `test-appgw.ps1` for automated testing:
+
+```powershell
+# Get the public IP from Terraform output
+$IP = (terraform output -raw appgw_public_ip)
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
+
+Write-Host "=== Testing Application Gateway: $IP ===" -ForegroundColor Green
+
+Write-Host "`n1. Load Balancing Test:" -ForegroundColor Yellow
+1..5 | ForEach-Object { 
+    curl "http://$IP" -UseBasicParsing | Select-String "Backend Server"
+}
+
+Write-Host "`n2. HTTPS Test:" -ForegroundColor Yellow
+curl -k "https://$IP" -UseBasicParsing | Select-String "Backend Server"
+
+Write-Host "`n3. Path-Based Routing - /api/*:" -ForegroundColor Yellow
+curl -k "https://$IP/api/test" -UseBasicParsing | Select-String "Backend Server"
+
+Write-Host "`n4. Path-Based Routing - /videos/*:" -ForegroundColor Yellow
+curl -k "https://$IP/videos/test.mp4" -UseBasicParsing | Select-String "Backend Server"
+
+Write-Host "`n5. Multi-Site - app1:" -ForegroundColor Yellow
+curl -k -H "Host: app1.appgwlab.local" "https://$IP" -UseBasicParsing | Select-String "Backend Server"
+
+Write-Host "`n6. Multi-Site - app2:" -ForegroundColor Yellow
+curl -k -H "Host: app2.appgwlab.local" "https://$IP" -UseBasicParsing | Select-String "Backend Server"
+
+Write-Host "`n7. Security Headers:" -ForegroundColor Yellow
+curl -kI "https://$IP" | Select-String "Strict-Transport-Security|X-Frame-Options|X-Content-Type-Options"
+
+Write-Host "`n8. Backend Health:" -ForegroundColor Yellow
+az network application-gateway show-backend-health `
+  --resource-group rg-appgw-lab `
+  --name appgw-lab-basic `
+  --query "backendAddressPools[].backendHttpSettingsCollection[].servers[].{Address:address, Health:health}" `
+  --output table
+
+Write-Host "`n=== Testing Complete ===" -ForegroundColor Green
+```
+
+Run it:
+```powershell
+.\test-appgw.ps1
 ```
 
 ## 🔧 Customization Options
