@@ -1,0 +1,425 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmssName": {
+      "type": "string",
+      "defaultValue": "demo-vmss",
+      "metadata": { "description": "Name of the Virtual Machine Scale Set" }
+    },
+    "instanceCount": {
+      "type": "int",
+      "defaultValue": 1,
+      "minValue": 1
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_B1ms"
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "azureuser"
+    },
+    "sshKeyData": {
+      "type": "string",
+      "metadata": { "description": "SSH public key data" }
+    },
+    "sshPublicKeyResourceName": {
+      "type": "string",
+      "defaultValue": "demo-vmss-key"
+    },
+    "subnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": { "description": "Resource ID of an existing subnet to attach VMSS NICs to (leave empty to create new VNet/subnet)" }
+    },
+    "createVnet": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": { "description": "If true, the template will create a new VNet and subnet in targetLocation" }
+    },
+    "vnetName": {
+      "type": "string",
+      "defaultValue": "vmss-vnet",
+      "metadata": { "description": "Name of VNet to create when createVnet=true" }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/16",
+      "metadata": { "description": "Address prefix for the VNet (when created)" }
+    },
+    "subnetName": {
+      "type": "string",
+      "defaultValue": "default",
+      "metadata": { "description": "Name of the subnet to create (when createVnet=true)" }
+    },
+    "subnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/24",
+      "metadata": { "description": "Address prefix for the subnet (when createVnet=true)" }
+    },
+    "nsgName": { "type": "string", "defaultValue": "vmss-nsg", "metadata": { "description": "Network Security Group name to create and attach to the created subnet (when createVnet=true)" } },
+    "lbName": { "type": "string", "defaultValue": "vmss-lb", "metadata": { "description": "Name of the load balancer that will front the VMSS" } },
+    "lbPublicIpName": { "type": "string", "defaultValue": "vmss-lb-pip", "metadata": { "description": "Public IP name for the load balancer" } },
+    "lawName": { "type": "string", "defaultValue": "demo-law", "metadata": { "description": "Log Analytics workspace name for VM Insights" } },
+    "imagePublisher": { "type": "string", "defaultValue": "Canonical" },
+    "imageOffer": { "type": "string", "defaultValue": "UbuntuServer" },
+    "imageSku": { "type": "string", "defaultValue": "16_04-lts-gen2" },
+    "imageVersion": { "type": "string", "defaultValue": "latest" },
+    "targetLocation": { "type": "string", "defaultValue": "southindia", "metadata": { "description": "Target Azure region for resources (e.g., southindia)" } },
+    "autoscaleName": { "type": "string", "defaultValue": "demo-vmss-autoscale", "metadata": { "description": "Autoscale setting name" } },
+    "autoscaleMin": { "type": "int", "defaultValue": 1 },
+    "autoscaleMax": { "type": "int", "defaultValue": 3 },
+    "autoscaleDefault": { "type": "int", "defaultValue": 1 },
+    "autoscaleCpuScaleOutThreshold": { "type": "int", "defaultValue": 20 },
+    "autoscaleCpuScaleInThreshold": { "type": "int", "defaultValue": 20 } 
+  },
+  "variables": {
+    "nicName": "vmssNic",
+    "ipConfigName": "ipconfig",
+    "publicIpName": "vmssPublicIP"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Compute/sshPublicKeys",
+      "apiVersion": "2024-11-01",
+      "name": "[parameters('sshPublicKeyResourceName')]",
+      "location": "[parameters('targetLocation')]",
+      "properties": {
+        "publicKey": "[parameters('sshKeyData')]"
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2024-07-01",
+      "name": "[parameters('nsgName')]",
+      "location": "[parameters('targetLocation')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "Allow-SSH",
+            "properties": {
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "destinationPortRange": "22",
+              "sourceAddressPrefix": "*",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 100,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "Allow-HTTP",
+            "properties": {
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "destinationPortRange": "80",
+              "sourceAddressPrefix": "*",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 200,
+              "direction": "Inbound"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-07-01",
+      "name": "[parameters('vnetName')]",
+      "location": "[parameters('targetLocation')]",
+      "condition": "[parameters('createVnet')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('vnetAddressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[parameters('subnetName')]",
+            "properties": {
+              "addressPrefix": "[parameters('subnetPrefix')]",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgName'))]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2024-07-01",
+      "name": "[variables('publicIpName')]",
+      "location": "[parameters('targetLocation')]",
+      "sku": { "name": "Standard" },
+      "properties": {
+        "publicIPAllocationMethod": "Static"
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2024-07-01",
+      "name": "[parameters('lbPublicIpName')]",
+      "location": "[parameters('targetLocation')]",
+      "sku": { "name": "Standard" },
+      "properties": {
+        "publicIPAllocationMethod": "Static"
+      }
+    },
+    {
+      "type": "Microsoft.Network/loadBalancers",
+      "apiVersion": "2023-11-01",
+      "name": "[parameters('lbName')]",
+      "location": "[parameters('targetLocation')]",
+      "sku": { "name": "Standard" },
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "LoadBalancerFrontEnd",
+            "properties": {
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', parameters('lbPublicIpName'))]"
+              }
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "backendPool"
+          }
+        ],
+        "probes": [
+          {
+            "name": "httpProbe",
+            "properties": {
+              "protocol": "Tcp",
+              "port": 80,
+              "intervalInSeconds": 5,
+              "numberOfProbes": 2
+            }
+          }
+        ],
+        "loadBalancingRules": [
+          {
+            "name": "httpRule",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', parameters('lbName'), 'LoadBalancerFrontEnd')]"
+              },
+              "backendAddressPool": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', parameters('lbName'), 'backendPool')]"
+              },
+              "probe": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/probes', parameters('lbName'), 'httpProbe')]"
+              },
+              "protocol": "Tcp",
+              "frontendPort": 80,
+              "backendPort": 80,
+              "enableFloatingIP": false,
+              "idleTimeoutInMinutes": 4,
+              "loadDistribution": "Default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2021-06-01",
+      "name": "[parameters('lawName')]",
+      "location": "[parameters('targetLocation')]",
+      "sku": { "name": "PerGB2018" },
+      "properties": {
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachineScaleSets",
+      "apiVersion": "2021-07-01",
+      "name": "[parameters('vmssName')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/loadBalancers', parameters('lbName'))]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgName'))]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIpName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+      ],
+      "location": "[parameters('targetLocation')]",
+      "sku": { 
+        "name": "[parameters('vmSize')]",
+        "tier": "Standard",
+        "capacity": "[parameters('instanceCount')]"
+      },
+      "properties": {
+        "orchestrationMode": "Uniform",
+        "overprovision": true,
+        "upgradePolicy": { "mode": "Automatic" },
+        "virtualMachineProfile": {
+          "storageProfile": {
+            "imageReference": {
+              "publisher": "[parameters('imagePublisher')]",
+              "offer": "[parameters('imageOffer')]",
+              "sku": "[parameters('imageSku')]",
+              "version": "[parameters('imageVersion')]"
+            }
+          },
+          "osProfile": {
+            "computerNamePrefix": "[concat(parameters('vmssName'), '-vm')]",
+            "adminUsername": "[parameters('adminUsername')]",
+            "linuxConfiguration": {
+              "disablePasswordAuthentication": true,
+              "ssh": {
+                "publicKeys": [
+                  {
+                    "path": "[concat('/home/', parameters('adminUsername'), '/.ssh/authorized_keys')]",
+                    "keyData": "[reference(resourceId('Microsoft.Compute/sshPublicKeys', parameters('sshPublicKeyResourceName')), '2024-11-01').publicKey]"
+                  }
+                ]
+              }
+            }
+          },
+          "extensionProfile": {
+            "extensions": [
+              {
+                "name": "CustomScript",
+                "properties": {
+                  "publisher": "Microsoft.Azure.Extensions",
+                  "type": "CustomScript",
+                  "typeHandlerVersion": "2.0",
+                  "autoUpgradeMinorVersion": true,
+                  "settings": {
+                    "commandToExecute": "bash -lc 'set -e; apt-get update -y && apt-get install -y nginx curl; systemctl enable nginx; systemctl start nginx; PRIVATE_IP=\"\"; for i in 1 2 3 4 5; do PRIVATE_IP=$(curl -s -H Metadata:true \"http://169.254.169.254/metadata/instance/network/interface/0/ipv4/ipAddress/0/privateIpAddress?api-version=2021-02-01&format=text\"); if [ -n \"$PRIVATE_IP\" ]; then break; fi; sleep 2; done; HOSTNAME=$(hostname); echo \"<html><body><h1>VM: $HOSTNAME ($PRIVATE_IP)</h1></body></html>\" > /var/www/html/index.html; chmod 644 /var/www/html/index.html'"
+                  }
+                }
+              }
+            ]
+          },
+          "networkProfile": {
+            "networkInterfaceConfigurations": [
+              {
+                "name": "[variables('nicName')]",
+                "properties": {
+                  "primary": true,
+                  "ipConfigurations": [
+                    {
+                      "name": "[variables('ipConfigName')]",
+                      "properties": {
+                        "subnet": { "id": "[if(parameters('createVnet'), resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnetName')), parameters('subnetId'))]" },
+                        "publicIPAddressConfiguration": {
+                          "name": "[variables('publicIpName')]",
+                          "properties": { "idleTimeoutInMinutes": 10 }
+                        },
+                        "loadBalancerBackendAddressPools": [
+                          {
+                            "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', parameters('lbName'), 'backendPool')]"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+    ,
+    {
+      "type": "Microsoft.Compute/virtualMachineScaleSets/extensions",
+      "apiVersion": "2021-07-01",
+      "name": "[concat(parameters('vmssName'), '/OmsAgentForLinux')]",
+      "location": "[parameters('targetLocation')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Compute/virtualMachineScaleSets', parameters('vmssName'))]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('lawName'))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.EnterpriseCloud.Monitoring",
+        "type": "OmsAgentForLinux",
+        "typeHandlerVersion": "1.0",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "workspaceId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', parameters('lawName')), '2021-06-01').customerId]"
+        },
+        "protectedSettings": {
+          "workspaceKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', parameters('lawName')), '2015-11-01-preview').primarySharedKey]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/autoscaleSettings",
+      "apiVersion": "2015-04-01",
+      "name": "[parameters('autoscaleName')]",
+      "location": "[parameters('targetLocation')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Compute/virtualMachineScaleSets', parameters('vmssName'))]"
+      ],
+      "properties": {
+        "targetResourceUri": "[resourceId('Microsoft.Compute/virtualMachineScaleSets', parameters('vmssName'))]",
+        "enabled": true,
+        "profiles": [
+          {
+            "name": "AutoScaleProfile",
+            "capacity": {
+              "minimum": "[string(parameters('autoscaleMin'))]",
+              "maximum": "[string(parameters('autoscaleMax'))]",
+              "default": "[string(parameters('autoscaleDefault'))]"
+            },
+            "rules": [
+              {
+                "metricTrigger": {
+                  "metricName": "Percentage CPU",
+                  "metricResourceUri": "[resourceId('Microsoft.Compute/virtualMachineScaleSets', parameters('vmssName'))]",
+                  "timeGrain": "PT1M",
+                  "statistic": "Average",
+                  "timeWindow": "PT5M",
+                  "timeAggregation": "Average",
+                  "operator": "GreaterThan",
+                  "threshold": "[parameters('autoscaleCpuScaleOutThreshold')]"
+                },
+                "scaleAction": {
+                  "direction": "Increase",
+                  "type": "ChangeCount",
+                  "value": "1",
+                  "cooldown": "PT5M"
+                }
+              },
+              {
+                "metricTrigger": {
+                  "metricName": "Percentage CPU",
+                  "metricResourceUri": "[resourceId('Microsoft.Compute/virtualMachineScaleSets', parameters('vmssName'))]",
+                  "timeGrain": "PT1M",
+                  "statistic": "Average",
+                  "timeWindow": "PT5M",
+                  "timeAggregation": "Average",
+                  "operator": "LessThan",
+                  "threshold": "[parameters('autoscaleCpuScaleInThreshold')]"
+                },
+                "scaleAction": {
+                  "direction": "Decrease",
+                  "type": "ChangeCount",
+                  "value": "1",
+                  "cooldown": "PT5M"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "vmssId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Compute/virtualMachineScaleSets', parameters('vmssName'))]"
+    },
+    "loadBalancerIp": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', parameters('lbPublicIpName'))).ipAddress]"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmssName": { "value": "demo-vmss" },
+    "instanceCount": { "value": 1 },
+    "vmSize": { "value": "Standard_D2s_v3" },
+    "adminUsername": { "value": "azureuser" },
+    "sshKeyData": { "value": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCjt68LnXJqHkzPVsVl2hoZXfs5b7O63kBYvdeMFFtLqsrgJgZpWIXWNlQvXbLKClNEKEYPP1cZ3FzLIyFpf4o1+8MsJeBtrbVIOveGc9x5uEc1v/XS/jzvdU6g2N6mX6tT392p4zj3Rt8z2yA4fmRY3JQVCwavg6d8+991ibslPJKCI2iu5JIXMGasCWsNSYiapFO0SLK45kRHDs2rFlx2J/TIo39v08ZLosCU0yeus2HGyClgjzGYX+4Owpfx9ppOsTw7sH6BW2mG7dwV7myGGxJJTs4rvM/wL8/B+nrSDzZkNsgug/MQhkiVGOFs95rlDsxAADExg9mz/So4FemV6iG8RYhG4ss+H5Vpn9R6qG8UlZopP+xCxXiAJKPCJNHWe039Kgy5z2xsIa2MJpaMNvLRnxPtJdABB0QtkmMAhrJ5g8DlzMajiwEIs/KJQvd48+P1uW1eGzhOm7JXJYhOr3JwJ1zDnh020421MQlvh5MxOEA6RWqPgr2fOW6qHZ0= generated-by-azure" },
+    "subnetId": { "value": "/subscriptions/91fe9683-ba2f-4b73-8680-b032940065a6/resourceGroups/demo-rg/providers/Microsoft.Network/virtualNetworks/vmss-vnet/subnets/default" },
+    "createVnet": { "value": true },
+    "vnetName": { "value": "vmss-vnet" },
+    "vnetAddressPrefix": { "value": "10.0.0.0/16" },
+    "subnetName": { "value": "default" },
+    "subnetPrefix": { "value": "10.0.0.0/24" },
+    "nsgName": { "value": "vmss-nsg" },
+    "imagePublisher": { "value": "Canonical" },
+    "imageOffer": { "value": "UbuntuServer" },
+    "imageSku": { "value": "16_04-lts-gen2" },
+    "imageVersion": { "value": "latest" },
+    "targetLocation": { "value": "southindia" }
+  }
+}
